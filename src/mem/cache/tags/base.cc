@@ -55,6 +55,13 @@
 #include "sim/sim_exit.hh"
 #include "sim/system.hh"
 
+// std::map<CacheBlk*, Addr> mpAddrCacheBlk; //mapping the address and cache blk
+unsigned long reuseDistance;
+// std::vector<CacheBlk*> vecBlk;
+// std::map<Addr, CacheBlk*>::iterator it_addr_blk, it_max;
+int upper[] = { 16, 32, 64, 128, 256};
+int lower[] = { 0, 16, 32, 64, 128};
+
 BaseTags::BaseTags(const Params *p)
     : ClockedObject(p), blkSize(p->block_size), blkMask(blkSize - 1),
       size(p->size), lookupLatency(p->tag_latency),
@@ -74,7 +81,7 @@ BaseTags::findBlockBySetAndWay(int set, int way) const
 }
 
 CacheBlk*
-BaseTags::findBlock(Addr addr, bool is_secure) const
+BaseTags::findBlock(Addr addr, bool is_secure) 
 {
     // Extract block tag
     Addr tag = extractTag(addr);
@@ -88,6 +95,30 @@ BaseTags::findBlock(Addr addr, bool is_secure) const
         CacheBlk* blk = static_cast<CacheBlk*>(location);
         if ((blk->tag == tag) && blk->isValid() &&
             (blk->isSecure() == is_secure)) {
+            auto it_blk = std::find(vecBlk.begin(), vecBlk.end(), blk);
+            if(it_blk != vecBlk.end()){                            //find if address is already present
+                //reuse distance calculation
+                reuseDistance = std::distance(it_blk, vecBlk.end()) - 1; 
+                std::rotate(it_blk, it_blk + 1, vecBlk.end()); //move blk to the end
+                //update frequency bins
+                if(reuseDistance > 255)
+                {
+                    blk->reuseFrequency[5]++;
+                }
+                for (int i = 0; i < 5; i++){
+                    if ((reuseDistance < upper[i]) && (reuseDistance >= lower[i])){
+                        blk->reuseFrequency[i]++;
+                    }   
+                    if (blk->reuseFrequency[i] > 15 || blk->reuseFrequency[5] > 15)
+                    {
+                        for(int i=0;i<6;i++) //when one bin goes over 15 all are halved
+                        {
+                            blk->reuseFrequency[i] = blk->reuseFrequency[i]/2;
+                        }
+                    }           
+                }
+            }
+
             return blk;
         }
     }
@@ -112,6 +143,9 @@ BaseTags::insertBlock(const PacketPtr pkt, CacheBlk *blk)
     // Insert block with tag, src master id and task id
     blk->insert(extractTag(pkt->getAddr()), pkt->isSecure(), master_id,
                 pkt->req->taskId());
+
+    vecBlk.push_back(blk);//adding inserted block into the vector
+    memset(blk->reuseFrequency, 0, sizeof(blk->reuseFrequency)); //reseting elements to 0
 
     // Check if cache warm up is done
     if (!warmedUp && stats.tagsInUse.value() >= warmupBound) {
