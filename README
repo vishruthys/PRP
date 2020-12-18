@@ -1,3 +1,8 @@
+Implementation of Reuse Distance-Based Probabilistic Cache Replacement
+https://dl.acm.org/doi/10.1145/2818374
+
+Testing was done using the ARM O3 CPU in gem5. 
+***************************************************************************
 This is the gem5 simulator.
 
 The main website can be found at http://www.gem5.org
